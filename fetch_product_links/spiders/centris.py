@@ -4,29 +4,23 @@ from __future__ import print_function
 
 import re
 import json
-import requests
-import traceback
 
-from time import sleep
 from lxml import html
-from scrapy import Request, FormRequest
-from urllib.parse import urljoin, urlencode
+from scrapy import Request
+from urllib.parse import urljoin
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-
-
-from fetch_product_links.spiders import BaseProduct, cond_set_value
-from fetch_product_links.utils import get_first_element
+from fetch_product_links.spiders import BaseProduct
 
 class CentrisProductsSpider(BaseProduct):
     name = 'centris_products'
     allowed_domains = ['centris.ca']
 
-    start_urls = ['https://www.centris.ca']
+    with open('urls.txt') as f:
+        urls = f.readlines()
+
+    start_urls = ['https://www.centris.ca/fr/propriete-commerciale~a-louer~montreal-ile?view=Thumbnail']
     product_api_url = 'https://www.centris.ca/Mvc/Property/GetInscriptions'
-    product_url = 'https://www.centris.ca/fr/propriete-commerciale~a-louer~montreal-ile?view=List'
-    start_posistion = 0
-    single_api_url = 'https://www.centris.ca/Mvc/Property/GetInscriptions'
 
     headers = {
         'Content-Type': 'application/json; charset=UTF-8',
@@ -36,28 +30,38 @@ class CentrisProductsSpider(BaseProduct):
     }
 
     search_url = 'https://www.centris.ca/fr/propriete-commerciale~a-vendre~{keyword}?view=Thumbnail'
-
     get_key_req_url = 'https://www.centris.ca/Property/PropertyWebService.asmx/GetAutoCompleteData'
 
+    i = 0
+
     def start_requests(self):
-        yield Request(url=self.start_urls[0], callback=self._start_requests, dont_filter=True)
+
+        i = self.i + 1
+        yield Request(
+            url=self.urls[i],
+            meta={'start_position': 0},
+            callback=self._start_requests,
+            dont_filter=True
+        )
 
     def _start_requests(self, response):
-        data = {'startPosition': self.start_posistion}
-        with open('urls.txt') as f:
-            urls = f.readlines()
+        start_position = response.meta.get('start_position')
+        data = {'startPosition': start_position}
 
-        for url in urls[0:1]:
-            self.headers['Referer'] = self._clean_text(url)
-            yield Request(
-                url=self.product_api_url,
-                method='POST',
-                body=json.dumps(data),
-                headers=self.headers,
-                dont_filter=True
-            )
+        # for url in self.urls[0:1]:
+        response.meta['start_position'] = start_position
+        self.headers['Referer'] = self._clean_text(self.urls[0])
+        yield Request(
+            url=self.product_api_url,
+            method='POST',
+            body=json.dumps(data),
+            headers=self.headers,
+            dont_filter=True,
+            meta=response.meta
+        )
 
     def parse(self, response):
+        start_position = response.meta.get('start_position')
         try:
             json_data = json.loads(response.text)
             result = json_data.get('d', {}).get('Result', {})
@@ -65,17 +69,9 @@ class CentrisProductsSpider(BaseProduct):
         except Exception as e:
             print(e)
 
-        page_length = (result.get('count') // 20) + 1
-
-        for i in range(1, page_length):
-            data = {'startPosition': 20 * i}
-            yield Request(
-                url=self.product_api_url,
-                method='POST',
-                body=json.dumps(data),
-                headers=self.headers,
-                callback=self.parse
-            )
+        page_length = result.get('count') // 20
+        if start_position > page_length * 20:
+            return
 
         product_links = tree_html.xpath("//a[contains(@class, 'a-more-detail')]/@href")
 
@@ -83,24 +79,38 @@ class CentrisProductsSpider(BaseProduct):
         options.headless = True
         driver = webdriver.Chrome('D:\\chromedriver.exe', chrome_options=options)
 
-
-
         for i, link in enumerate(product_links):
             url = urljoin(response.url, link)
             driver.get(url)
-            product = self.parse_single_product(driver.page_source)
+            resp = driver.page_source
+
+            product = self.parse_single_product(resp)
             yield product
+
+        start_position = 20 + start_position
+        response.meta['start_position'] = start_position
+        yield Request(
+            url=self.start_urls[0],
+            meta=response.meta,
+            callback=self._start_requests,
+            dont_filter=True
+        )
 
     def parse_single_product(self, response):
         product = {}
         tree_html = html.fromstring(response)
-        title = ''.join(html.fromstring(response).xpath("//h1[@itemprop='category']//span/text()"))
-        price = ''.join(html.fromstring(response).xpath("//div[@class='price']//span/text()"))[2:]
-        description = self._clean_text(''.join(html.fromstring(response).xpath("//div[@itemprop='description']/text()")))
-        construction_year = ''.join(html.fromstring(response).xpath("//td[text()='Année de construction']/following-sibling::td[1]/span/text()"))
-        geo_coordinates = ''.join(html.fromstring(response).xpath("//div[@itemprop='geo']//meta/@content"))
-        lot_area = ''.join(html.fromstring(response).xpath("//td[text()='Superficie disponible']/following-sibling::td[1]/span/text()"))
-        parking = ''.join(html.fromstring(response).xpath("//td[text()='Nombre d’unités']/following-sibling::td[1]/span/text()"))
+        title = ''.join(tree_html.xpath("//h1[@itemprop='category']//span/text()"))
+        price = ''.join(tree_html.xpath("//div[@class='price']//span/text()"))[2:]
+        description = self._clean_text(''.join(tree_html.xpath("//div[@itemprop='description']/text()")))
+        construction_year = ''.join(tree_html.xpath("//td[text()='Année de construction']/following-sibling::td[1]/span/text()"))
+        geo_coordinates = ''.join(tree_html.xpath("//div[@itemprop='geo']//meta/@content"))
+        lot_area = ''.join(tree_html.xpath("//td[text()='Superficie disponible']/following-sibling::td[1]/span/text()"))
+        parking = ''.join(tree_html.xpath("//td[text()='Nombre d’unités']/following-sibling::td[1]/span/text()"))
+        bathbeds = ''.join(tree_html.xpath("//div[@class='teaser']//span/text()"))
+        building_style = ''.join(tree_html.xpath("//td[text()='Building style']/following-sibling::td[1]/span/text()"))
+        add_features = ''.join(tree_html.xpath("//td[text()='Additional features']/following-sibling::td[1]/span/text()"))
+        pool = ''.join(tree_html.xpath("//td[text()='Swimming pool']/following-sibling::td[1]/span/text()"))
+
         product['title'] = title
         product['price'] = price
         product['description'] = description
@@ -108,10 +118,13 @@ class CentrisProductsSpider(BaseProduct):
         product['geo_coordinates'] = geo_coordinates
         product['lot_area'] = lot_area
         product['parking'] = parking
-        yield product
+        product['bedbaths'] = bathbeds
+        product['building_style'] = building_style
+        product['add_features'] = add_features
+        product['pool'] = pool
+        return product
 
     def _clean_text(self, text):
         text = text.replace("\n", " ").replace("\t", " ").replace("\r", " ")
         text = re.sub("&nbsp;", " ", text).strip()
-
         return re.sub(r'\s+', ' ', text)
