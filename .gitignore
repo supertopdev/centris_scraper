@@ -1,0 +1,7 @@
+.idea/
+.vscode/
+*.pyc
+*.json
+*.csv
+*.log
+images/
