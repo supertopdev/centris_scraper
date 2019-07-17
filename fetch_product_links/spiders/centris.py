@@ -18,8 +18,7 @@ class CentrisProductsSpider(BaseProduct):
 
     with open('urls.txt') as f:
         urls = f.readlines()
-
-    start_urls = ['https://www.centris.ca/fr/propriete-commerciale~a-louer~montreal-ile?view=Thumbnail']
+    start_urls = ['https://www.centris.ca']
     product_api_url = 'https://www.centris.ca/Mvc/Property/GetInscriptions'
 
     headers = {
@@ -32,25 +31,29 @@ class CentrisProductsSpider(BaseProduct):
     search_url = 'https://www.centris.ca/fr/propriete-commerciale~a-vendre~{keyword}?view=Thumbnail'
     get_key_req_url = 'https://www.centris.ca/Property/PropertyWebService.asmx/GetAutoCompleteData'
 
-    i = 0
-
     def start_requests(self):
-
-        i = self.i + 1
-        yield Request(
-            url=self.urls[i],
-            meta={'start_position': 0},
-            callback=self._start_requests,
-            dont_filter=True
-        )
+        for url in self.urls:
+            if url and url.split('/')[-1].isdigit():
+                yield Request(
+                    url=self._clean_text(url),
+                    meta={'url': url},
+                    dont_filter=True
+                )
+            else:
+                yield Request(
+                    url=self._clean_text(url),
+                    meta={'start_position': 0, 'url': url},
+                    callback=self._start_requests,
+                    dont_filter=True
+                )
 
     def _start_requests(self, response):
         start_position = response.meta.get('start_position')
+        url = response.meta.get('url')
         data = {'startPosition': start_position}
 
-        # for url in self.urls[0:1]:
         response.meta['start_position'] = start_position
-        self.headers['Referer'] = self._clean_text(self.urls[0])
+        self.headers['Referer'] = self._clean_text(url)
         yield Request(
             url=self.product_api_url,
             method='POST',
@@ -61,46 +64,44 @@ class CentrisProductsSpider(BaseProduct):
         )
 
     def parse(self, response):
-        start_position = response.meta.get('start_position')
-        try:
-            json_data = json.loads(response.text)
-            result = json_data.get('d', {}).get('Result', {})
-            tree_html = html.fromstring(result.get('html'))
-        except Exception as e:
-            print(e)
-
-        page_length = result.get('count') // 20
-        if start_position > page_length * 20:
-            return
-
-        product_links = tree_html.xpath("//a[contains(@class, 'a-more-detail')]/@href")
-
-        options = Options()
-        options.headless = True
-        driver = webdriver.Chrome('D:\\chromedriver.exe', chrome_options=options)
-
-        for i, link in enumerate(product_links):
-            url = urljoin(response.url, link)
-            driver.get(url)
-            resp = driver.page_source
-
-            product = self.parse_single_product(resp)
+        url = response.meta.get('url')
+        if url and url.split('/')[-1].isdigit():
+            product = self.get_data_from_selenium(url)
             yield product
+        else:
+            start_position = response.meta.get('start_position')
+            try:
+                json_data = json.loads(response.text)
+                result = json_data.get('d', {}).get('Result', {})
+                tree_html = html.fromstring(result.get('html'))
+            except Exception as e:
+                print(e)
 
-        start_position = 20 + start_position
-        response.meta['start_position'] = start_position
-        yield Request(
-            url=self.start_urls[0],
-            meta=response.meta,
-            callback=self._start_requests,
-            dont_filter=True
-        )
+            page_length = result.get('count') // 20
+            if start_position > page_length * 20:
+                return
 
-    def parse_single_product(self, response):
+            product_links = tree_html.xpath("//a[contains(@class, 'a-more-detail')]/@href")
+
+            for i, link in enumerate(product_links):
+                url = urljoin(response.url, link)
+                product = self.get_data_from_selenium(url)
+                yield product
+
+            start_position = 20 + start_position
+            response.meta['start_position'] = start_position
+            yield Request(
+                url=self.start_urls[0],
+                meta=response.meta,
+                callback=self._start_requests,
+                dont_filter=True
+            )
+
+    def parse_single_product(self, response, url):
         product = {}
         tree_html = html.fromstring(response)
         title = ''.join(tree_html.xpath("//h1[@itemprop='category']//span/text()"))
-        price = ''.join(tree_html.xpath("//div[@class='price']//span/text()"))[2:]
+        price = ''.join(tree_html.xpath("//div[@class='price']//span/text()"))
         description = self._clean_text(''.join(tree_html.xpath("//div[@itemprop='description']/text()")))
         construction_year = ''.join(tree_html.xpath("//td[text()='Année de construction']/following-sibling::td[1]/span/text()"))
         geo_coordinates = ''.join(tree_html.xpath("//div[@itemprop='geo']//meta/@content"))
@@ -111,6 +112,7 @@ class CentrisProductsSpider(BaseProduct):
         add_features = ''.join(tree_html.xpath("//td[text()='Additional features']/following-sibling::td[1]/span/text()"))
         pool = ''.join(tree_html.xpath("//td[text()='Swimming pool']/following-sibling::td[1]/span/text()"))
 
+        product['url'] = url
         product['title'] = title
         product['price'] = price
         product['description'] = description
@@ -122,6 +124,17 @@ class CentrisProductsSpider(BaseProduct):
         product['building_style'] = building_style
         product['add_features'] = add_features
         product['pool'] = pool
+        return product
+
+    def get_data_from_selenium(self, url):
+        options = Options()
+        options.headless = True
+        driver = webdriver.Chrome('D:\\chromedriver.exe', chrome_options=options)
+        driver.get(url)
+        resp = driver.page_source
+        driver.quit()
+
+        product = self.parse_single_product(resp, url)
         return product
 
     def _clean_text(self, text):
