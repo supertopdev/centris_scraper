@@ -127,9 +127,10 @@ class CentrisProductsSpider(BaseProduct):
         return product
 
     def get_data_from_selenium(self, url):
-        options = Options()
-        options.headless = True
-        driver = webdriver.Chrome('D:\\chromedriver.exe', chrome_options=options)
+        # options = Options()
+        # options.headless = True
+        driver = webdriver.PhantomJS(executable_path='phantomjs/bin/phantomjs.exe')
+        # driver = webdriver.Chrome('D:\\chromedriver.exe', chrome_options=options)
         driver.get(url)
         resp = driver.page_source
         driver.quit()
