@@ -5,6 +5,7 @@ from __future__ import print_function
 import re
 import json
 
+from sys import platform
 from lxml import html
 from scrapy import Request
 from urllib.parse import urljoin
@@ -75,6 +76,7 @@ class CentrisProductsSpider(BaseProduct):
                 result = json_data.get('d', {}).get('Result', {})
                 tree_html = html.fromstring(result.get('html'))
             except Exception as e:
+                # result = None
                 print(e)
 
             page_length = result.get('count') // 20
@@ -129,7 +131,11 @@ class CentrisProductsSpider(BaseProduct):
     def get_data_from_selenium(self, url):
         # options = Options()
         # options.headless = True
-        driver = webdriver.PhantomJS(executable_path='phantomjs/bin/phantomjs.exe')
+        driver = None
+        if platform == "linux" or platform == "linux2":
+            driver = webdriver.PhantomJS(executable_path='phantomjs_linux/bin/phantomjs', service_log_path='phantomjs_linux/ghostdriver.log')
+        elif platform == "win32":
+            driver = webdriver.PhantomJS(executable_path='phantomjs/bin/phantomjs.exe')
         # driver = webdriver.Chrome('D:\\chromedriver.exe', chrome_options=options)
         driver.get(url)
         resp = driver.page_source
