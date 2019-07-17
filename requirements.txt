@@ -40,3 +40,4 @@ zope.interface==4.6.0
 numpy
 pytesseract
 opencv-python
+selenium
