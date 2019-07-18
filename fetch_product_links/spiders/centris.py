@@ -10,6 +10,8 @@ from lxml import html
 from scrapy import Request
 from urllib.parse import urljoin
 from selenium import webdriver
+from translate import Translator
+
 from selenium.webdriver.chrome.options import Options
 from fetch_product_links.spiders import BaseProduct
 
@@ -102,30 +104,47 @@ class CentrisProductsSpider(BaseProduct):
     def parse_single_product(self, response, url):
         product = {}
         tree_html = html.fromstring(response)
-        title = ''.join(tree_html.xpath("//h1[@itemprop='category']//span/text()"))
-        price = ''.join(tree_html.xpath("//div[@class='price']//span/text()"))
-        description = self._clean_text(''.join(tree_html.xpath("//div[@itemprop='description']/text()")))
-        construction_year = ''.join(tree_html.xpath("//td[text()='Année de construction']/following-sibling::td[1]/span/text()"))
-        geo_coordinates = ''.join(tree_html.xpath("//div[@itemprop='geo']//meta/@content"))
-        lot_area = ''.join(tree_html.xpath("//td[text()='Superficie disponible']/following-sibling::td[1]/span/text()"))
-        parking = ''.join(tree_html.xpath("//td[text()='Nombre d’unités']/following-sibling::td[1]/span/text()"))
-        bathbeds = ''.join(tree_html.xpath("//div[@class='teaser']//span/text()"))
-        building_style = ''.join(tree_html.xpath("//td[text()='Building style']/following-sibling::td[1]/span/text()"))
-        add_features = ''.join(tree_html.xpath("//td[text()='Additional features']/following-sibling::td[1]/span/text()"))
-        pool = ''.join(tree_html.xpath("//td[text()='Swimming pool']/following-sibling::td[1]/span/text()"))
+        products = tree_html.xpath("//div[@class='grid_3']//div[@class='description']//table//tr")
+        title = ' '.join(tree_html.xpath("//h1[@itemprop='category']//span/text()"))
+        address = ' '.join(tree_html.xpath("//h2[@itemprop='address']/text()"))
+        price = ' '.join(tree_html.xpath("//div[@class='price']//span/text()"))
+        description = self._clean_text(' '.join(tree_html.xpath("//div[@itemprop='description']/text()")))
+        bathbeds = ' '.join(tree_html.xpath("//div[@class='teaser']//span/text()"))
+        walkscore = ' '.join(tree_html.xpath("//div[@class='walkscore']//span/text()"))
+        geo_coordinates = ' '.join(tree_html.xpath("//div[@itemprop='geo']//meta/@content"))
 
         product['url'] = url
         product['title'] = title
+        product['address'] = address
         product['price'] = price
         product['description'] = description
-        product['construction_year'] = construction_year
-        product['geo_coordinates'] = geo_coordinates
-        product['lot_area'] = lot_area
-        product['parking'] = parking
         product['bedbaths'] = bathbeds
-        product['building_style'] = building_style
-        product['add_features'] = add_features
-        product['pool'] = pool
+        product['walkscore'] = walkscore
+        product['geo_coordinates'] = geo_coordinates
+
+        for item in products:
+            # translator = Translator(from_lang="french", to_lang="english")
+
+            key = self._clean_text(html.fromstring(html.tostring(item)).xpath('//tr/td/text()')[0])
+            value = self._clean_text(html.fromstring(html.tostring(item)).xpath('//tr/td/span/text()')[0])
+
+            product[key] = value
+
+        # construction_year = ' '.join(tree_html.xpath("//td[text()='Année de construction']/following-sibling::td[1]/span/text()"))
+        # geo_coordinates = ' '.join(tree_html.xpath("//div[@itemprop='geo']//meta/@content"))
+        # lot_area = ' '.join(tree_html.xpath("//td[text()='Superficie disponible']/following-sibling::td[1]/span/text()"))
+        # parking = ' '.join(tree_html.xpath("//td[text()='Nombre d’unités']/following-sibling::td[1]/span/text()"))
+        # building_style = ' '.join(tree_html.xpath("//td[text()='Building style']/following-sibling::td[1]/span/text()"))
+        # add_features = ' '.join(tree_html.xpath("//td[text()='Additional features']/following-sibling::td[1]/span/text()"))
+        # pool = ' '.join(tree_html.xpath("//td[text()='Swimming pool']/following-sibling::td[1]/span/text()"))
+
+
+        # product['construction_year'] = construction_year
+        # product['lot_area'] = lot_area
+        # product['parking'] = parking
+        # product['building_style'] = building_style
+        # product['add_features'] = add_features
+        # product['pool'] = pool
         return product
 
     def get_data_from_selenium(self, url):
