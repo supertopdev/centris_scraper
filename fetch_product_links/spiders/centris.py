@@ -21,6 +21,11 @@ class CentrisProductsSpider(BaseProduct):
 
     with open('urls.txt') as f:
         urls = f.readlines()
+
+    # urls = ['https://www.centris.ca/en/properties~for-rent?view=Thumbnail',
+    #         'https://www.centris.ca/en/commercial-properties~for-rent?view=Thumbnail',
+    #         'https://www.centris.ca/en/commercial-properties~for-sale?view=Thumbnail',
+    #         'https://www.centris.ca/en/properties~for-sale?view=Thumbnail']
     start_urls = ['https://www.centris.ca']
     product_api_url = 'https://www.centris.ca/Mvc/Property/GetInscriptions'
 
@@ -36,6 +41,7 @@ class CentrisProductsSpider(BaseProduct):
 
     def start_requests(self):
         for url in self.urls:
+        # url = 'https://www.centris.ca/en/commercial-properties~for-sale?view=Thumbnail'
             if url and url.split('/')[-1].isdigit():
                 yield Request(
                     url=self._clean_text(url),
@@ -47,7 +53,7 @@ class CentrisProductsSpider(BaseProduct):
                     url=self._clean_text(url),
                     meta={'start_position': 0, 'url': url},
                     callback=self._start_requests,
-                    dont_filter=True
+                    dont_filter=False
                 )
 
     def _start_requests(self, response):
